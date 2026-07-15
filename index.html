@@ -2,15 +2,29 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Blue Lock Rivals 3D - Khởi Động</title>
+    <title>Blue Lock Rivals - Meta Vision</title>
     <style>
-        /* Tẩy sạch viền trắng thừa thãi, cho game full màn hình luôn */
         body { margin: 0; overflow: hidden; background-color: #87CEEB; }
         canvas { display: block; }
+        /* Thêm cái UI ngầu lòi góc màn hình */
+        #ui {
+            position: absolute; top: 10px; left: 10px; 
+            color: white; font-family: monospace; font-size: 16px;
+            background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px;
+        }
     </style>
 </head>
 <body>
+    <div id="ui">
+        <b>[CƠ CHẾ ĐIỀU KHIỂN]</b><br>
+        W A S D: Di chuyển<br>
+        Shift: Nước rút (Sprint)<br>
+        G: Thức tỉnh (Flow)<br>
+        M1 (Chuột trái): Sút (Sắp ra mắt)
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
