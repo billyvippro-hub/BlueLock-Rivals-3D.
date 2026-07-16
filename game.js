@@ -1,264 +1,267 @@
-// Đảm bảo game chỉ chạy KHI VÀ CHỈ KHI trình duyệt đã dựng xong giao diện (Tránh lỗi document.body bị null)
+// ==========================================
+// ĐẠI DỰ ÁN BLUE LOCK RIVALS 3D - BẢN HOÀN THIỆN LEGO & LOBBY
+// ==========================================
+
 window.addEventListener('DOMContentLoaded', () => {
-    console.log("🎮 Game đang khởi tạo hệ thống...");
-
-    // ==========================================
-    // 1. KẾT NỐI MULTIPLAYER (CƠ CHẾ TỰ ĐỘNG CHẠY OFFLINE NẾU LỖI)
-    // ==========================================
-    let socket;
-    if (typeof io !== 'undefined') {
-        // 🔴 CHÚ Ý: Khi nào server Render hoạt động, hãy thay link thật của bro vào đây!
-        socket = io('https://bluelock-rivals-3d.onrender.com/'); 
-        console.log("🔌 Đã kết nối thư viện Socket.io mạng lưới.");
-    } else {
-        console.warn("⚠️ Không tìm thấy Socket.io hoặc lỗi link! Game tự động chuyển sang chế độ CHƠI ĐƠN (Offline) bảo mật.");
-        // Tạo một object ảo (Mock) để các hàm socket phía dưới không bị lỗi crash game
-        socket = {
-            on: function(event, callback) { console.log(`[Offline Mode] Đang chặn sự kiện: ${event}`); },
-            emit: function(event, data) { }
-        };
-    }
-
-    // Cập nhật bảng hướng dẫn UI ngoài màn hình cho xịn sò
-    const uiDiv = document.getElementById('ui');
-    if (uiDiv) {
-        uiDiv.innerHTML = `
-            <b>[CƠ CHẾ ĐIỀU KHIỂN CHUYÊN NGHIỆP - FIXED]</b><br>
-            • <b>Click vào màn hình</b> để khóa chuột xoay 360° (Shiftlock)<br>
-            • Di chuột tự do để xoay camera xung quanh nhân vật<br>
-            • W A S D: Chạy theo đúng hướng camera đang nhìn<br>
-            • Shift: Nước rút tốc độ (Sprint)<br>
-            • G: Thức tỉnh (Flow - Đầu phát sáng Cyan + Tăng max chỉ số)<br>
-            • Click Chuột Trái (M1): Sút bóng mạnh mẽ theo hướng nhìn<br>
-            • Nhấn phím <b>ESC</b> để mở khóa con trỏ chuột
-        `;
-    }
-
-    // ==========================================
-    // 2. SETUP VŨ TRỤ 3D & CANVAS
-    // ==========================================
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    
-    // Kiểm tra an toàn trước khi chèn màn hình game vào body
-    if (document.body) {
-        document.body.appendChild(renderer.domElement);
-    } else {
-        console.error("❌ Chí mạng: Không tìm thấy thẻ <body> của trang web!");
-        return;
-    }
-
-    // ==========================================
-    // 3. ĐIỀU KHIỂN CHUỘT 360 ĐỘ (Pointer Lock)
-    // ==========================================
-    let yaw = 0;     // Góc xoay ngang
-    let pitch = 0.5; // Góc xoay dọc mặc định vừa tầm mắt
-
-    renderer.domElement.addEventListener('click', () => {
-        renderer.domElement.requestPointerLock();
-    });
-
-    document.addEventListener('mousemove', (event) => {
-        if (document.pointerLockElement === renderer.domElement) {
-            yaw -= event.movementX * 0.0025;   // Tốc độ nhạy xoay chuột trái/phải
-            pitch -= event.movementY * 0.0025; // Tốc độ nhạy xoay chuột lên/xuống
-            
-            // Giới hạn góc nhìn dọc (không cho camera cắm xuống đất hoặc ngửa quá đà)
-            pitch = Math.max(0.15, Math.min(Math.PI / 2.2, pitch));
-        }
-    });
-
-    // ==========================================
-    // 4. MÔI TRƯỜNG CỎ NỀN & SÂN ĐẤU XÁM TRẮNG
-    // ==========================================
-    // Nền đất xanh lá cây đậm ở xa đường chân trời
-    const bgGeo = new THREE.PlaneGeometry(500, 500);
-    const bgMat = new THREE.MeshBasicMaterial({ color: 0x145A32, side: THREE.DoubleSide });
-    const bgField = new THREE.Mesh(bgGeo, bgMat);
-    bgField.rotation.x = Math.PI / 2;
-    bgField.position.y = -0.1; // Nằm hơi thấp hơn sân chính
-    scene.add(bgField);
-
-    // Mặt sân thi đấu chính (Màu trắng xám flat-shading cổ điển)
-    const pitchGeo = new THREE.PlaneGeometry(40, 70);
-    const pitchMat = new THREE.MeshBasicMaterial({ color: 0xD6DBDF, side: THREE.DoubleSide });
-    const pitchMesh = new THREE.Mesh(pitchGeo, pitchMat);
-    pitchMesh.rotation.x = Math.PI / 2;
-    scene.add(pitchMesh);
-
-    // Dựng 2 khung thành vuông vức màu trắng ở 2 đầu sân
-    function createGoal(x, z, rotation) {
-        const goalGroup = new THREE.Group();
-        const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        
-        const leftPost = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.5, 0.2), material);
-        leftPost.position.set(-4, 1.75, 0);
-        
-        const rightPost = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.5, 0.2), material);
-        rightPost.position.set(4, 1.75, 0);
-        
-        const topBar = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.2, 0.2), material);
-        topBar.position.set(0, 3.5, 0);
-        
-        goalGroup.add(leftPost, rightPost, topBar);
-        goalGroup.position.set(x, 0, z);
-        goalGroup.rotation.y = rotation;
-        scene.add(goalGroup);
-    }
-    createGoal(0, -32, 0);
-    createGoal(0, 32, Math.PI);
-
-    // Quả bóng dạng Voxel khối vuông đồng bộ phong cách
-    const ballGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-    const ballMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const ball = new THREE.Mesh(ballGeo, ballMat);
-    ball.position.set(0, 0.3, 0);
-    scene.add(ball);
-
-    let ballVelocity = { x: 0, z: 0 };
-
-    // ==========================================
-    // 5. HÀM KHỞI TẠO NHÂN VẬT VOXEL PHÂN CẤP TỶ LỆ CHUẨN ĐẸP
-    // ==========================================
-    function createVoxelPlayer(isFlow = false) {
-        const pGroup = new THREE.Group();
-
-        // Palette màu chuẩn chỉ theo yêu cầu thiết kế của bro
-        const headColor = isFlow ? 0x00ffff : 0x2C3E50;  // Bình thường: Xanh đen xám | Flow: Hào quang xanh rực rỡ
-        const torsoColor = 0x4682B4;                     // Thân trên: Xanh dương Denim (Blue Jeans)
-        const beltColor = 0x111111;                      // Vạch ngang thắt lưng đen ở giữa
-        const legsColor = 0x2E5B88;                      // Thân dưới/Chân: Xanh dương đồng bộ
-
-        // Chân (Legs)
-        const legsGeo = new THREE.BoxGeometry(0.7, 0.8, 0.4);
-        const legsMat = new THREE.MeshBasicMaterial({ color: legsColor });
-        const legs = new THREE.Mesh(legsGeo, legsMat);
-        legs.position.y = 0.4;
-        pGroup.add(legs);
-
-        // Thắt lưng đen (Belt)
-        const beltGeo = new THREE.BoxGeometry(0.72, 0.15, 0.42); 
-        const beltMat = new THREE.MeshBasicMaterial({ color: beltColor });
-        const belt = new THREE.Mesh(beltGeo, beltMat);
-        belt.position.y = 0.875;
-        pGroup.add(belt);
-
-        // Thân trên thon dài (Torso)
-        const torsoGeo = new THREE.BoxGeometry(0.7, 1.1, 0.4);
-        const torsoMat = new THREE.MeshBasicMaterial({ color: torsoColor });
-        const torso = new THREE.Mesh(torsoGeo, torsoMat);
-        torso.position.y = 1.5;
-        pGroup.add(torso);
-
-        // Đầu (Head)
-        const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-        const headMat = new THREE.MeshBasicMaterial({ color: headColor });
-        const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 2.3;
-        pGroup.add(head);
-
-        return pGroup;
-    }
-
-    let player = createVoxelPlayer(false);
-    scene.add(player);
-
-    const otherPlayers = {}; 
-
-    // ==========================================
-    // 6. HỆ THỐNG DI CHUYỂN BÀN PHÍM & SÚT BÓNG M1
-    // ==========================================
-    const keys = { w: false, a: false, s: false, d: false, shift: false };
-    let isFlowActive = false;
-
-    document.addEventListener('keydown', (event) => {
-        let key = event.key.toLowerCase();
-        if (keys.hasOwnProperty(key)) keys[key] = true;
-
-        if (key === 'g') {
-            isFlowActive = !isFlowActive;
-            const oldPos = player.position.clone();
-            const oldRot = player.rotation.y;
-            scene.remove(player);
-            player = createVoxelPlayer(isFlowActive);
-            player.position.copy(oldPos);
-            player.rotation.y = oldRot;
-            scene.add(player);
-        }
-    });
-
-    document.addEventListener('keyup', (event) => {
-        let key = event.key.toLowerCase();
-        if (keys.hasOwnProperty(key)) keys[key] = false;
-    });
-
-    // Sút bóng theo hướng camera nhìn bằng chuột trái M1
-    document.addEventListener('mousedown', (event) => {
-        if (event.button === 0 && document.pointerLockElement === renderer.domElement) {
-            let dist = player.position.distanceTo(ball.position);
-            if (dist < 1.8) { 
-                const shootDirX = -Math.sin(player.rotation.y);
-                const shootDirZ = -Math.cos(player.rotation.y);
-
-                let shootPower = isFlowActive ? 1.6 : 0.85;
-                ballVelocity.x = shootDirX * shootPower;
-                ballVelocity.z = shootDirZ * shootPower;
+    // 1. TẠO GIAO DIỆN LOBBY (SẢNH CHỜ CHỌN NHÂN VẬT)
+    const lobbyDiv = document.createElement('div');
+    lobbyDiv.id = 'lobby';
+    lobbyDiv.style.cssText = `
+        position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: linear-gradient(135deg, #1B4F72, #000000);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        color: white; font-family: 'Arial', sans-serif; z-index: 1000;
+    `;
+    lobbyDiv.innerHTML = `
+        <h1 style="font-size: 40px; text-shadow: 2px 2px 5px #00ffff; color: #00ffff;">BLUE LOCK RIVALS</h1>
+        <p style="margin-bottom: 30px; font-size: 18px;">Chọn Egoist của bạn để bước vào Lam Ngục</p>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+            <button class="ego-btn" onclick="startGame('isagi')">Yoichi Isagi</button>
+            <button class="ego-btn" onclick="startGame('bachira')">Meguru Bachira</button>
+            <button class="ego-btn" onclick="startGame('nagi')">Seishiro Nagi</button>
+            <button class="ego-btn" onclick="startGame('rin')">Rin Itoshi</button>
+            <button class="ego-btn" onclick="startGame('chigiri')">Hyoma Chigiri</button>
+            <button class="ego-btn" onclick="startGame('barou')">Shoei Barou</button>
+            <button class="ego-btn" onclick="startGame('kaiser')" style="border-color: gold; color: gold;">Michael Kaiser</button>
+        </div>
+        <style>
+            .ego-btn {
+                padding: 15px 20px; font-size: 16px; font-weight: bold; background: #2C3E50;
+                color: white; border: 2px solid #3498DB; border-radius: 8px; cursor: pointer;
+                transition: 0.3s;
             }
-        }
-    });
+            .ego-btn:hover { background: #3498DB; transform: scale(1.1); box-shadow: 0 0 15px #3498DB; }
+        </style>
+    `;
+    document.body.appendChild(lobbyDiv);
 
-    // MULTIPLAYER LISTENERS (AN TOÀN TUYỆT ĐỐI)
-    socket.on('currentPlayers', (players) => {
-        for (let id in players) {
-            if (socket.id && id === socket.id) continue;
-            addOtherPlayer(id, players[id]);
-        }
-    });
-    socket.on('newPlayer', (data) => { addOtherPlayer(data.playerId, data.playerInfo); });
+    // Biến toàn cục
+    let scene, camera, renderer, socket, player, ball;
+    let otherPlayers = {};
+    let myStyle = 'isagi';
+    let isFlowActive = false;
+    let yaw = 0, pitch = 0.5;
+    let ballVelocity = { x: 0, z: 0 };
+    const keys = { w: false, a: false, s: false, d: false, shift: false };
     
+    // Đưa hàm startGame ra ngoài window để button HTML gọi được
+    window.startGame = function(selectedStyle) {
+        myStyle = selectedStyle;
+        document.body.removeChild(lobbyDiv); // Xóa Lobby đi
+        initGame(); // Khởi động môi trường 3D
+    };
+
+    // ==========================================
+    // 2. KHỞI TẠO MÔI TRƯỜNG GAME VÀ MULTIPLAYER
+    // ==========================================
+    function initGame() {
+        // --- MULTIPLAYER SETUP ---
+        if (typeof io !== 'undefined') {
+            socket = io('https://bluelock-rivals-3d.onrender.com/'); // 🔴 NHỚ THAY LINK RENDER VÀO ĐÂY!
+        } else {
+            socket = { on: () => {}, emit: () => {} }; // Chế độ chơi đơn (Offline) an toàn
+        }
+
+        // --- THREE.JS SETUP ---
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Bảng UI hướng dẫn
+        const uiDiv = document.createElement('div');
+        uiDiv.id = 'ui';
+        uiDiv.style.cssText = 'position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.6); padding: 10px; font-family: monospace; border-radius: 5px; z-index: 10;';
+        uiDiv.innerHTML = `
+            <b>[ĐIỀU KHIỂN: ${myStyle.toUpperCase()}]</b><br>
+            • Click màn hình: Khóa xoay chuột<br>
+            • W A S D: Di chuyển | Shift: Sprint<br>
+            • G: Flow Awakening | M1: Sút bóng
+        `;
+        document.body.appendChild(uiDiv);
+
+        // --- MÔI TRƯỜNG & SÂN BÓNG ---
+        const bgField = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshBasicMaterial({ color: 0x145A32, side: THREE.DoubleSide }));
+        bgField.rotation.x = Math.PI / 2; bgField.position.y = -0.1; scene.add(bgField);
+
+        const pitchMesh = new THREE.Mesh(new THREE.PlaneGeometry(40, 70), new THREE.MeshBasicMaterial({ color: 0xD6DBDF, side: THREE.DoubleSide }));
+        pitchMesh.rotation.x = Math.PI / 2; scene.add(pitchMesh);
+
+        function createGoal(x, z, rot) {
+            const grp = new THREE.Group();
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const lp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.5, 0.2), mat); lp.position.set(-4, 1.75, 0);
+            const rp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.5, 0.2), mat); rp.position.set(4, 1.75, 0);
+            const tb = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.2, 0.2), mat); tb.position.set(0, 3.5, 0);
+            grp.add(lp, rp, tb); grp.position.set(x, 0, z); grp.rotation.y = rot; scene.add(grp);
+        }
+        createGoal(0, -32, 0); createGoal(0, 32, Math.PI);
+
+        ball = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        ball.position.set(0, 0.5, 0); scene.add(ball);
+
+        // --- TẠO NHÂN VẬT CHÍNH ---
+        player = createLegoPlayer(myStyle, isFlowActive);
+        scene.add(player);
+
+        // --- ĐĂNG KÝ SỰ KIỆN CHUỘT & BÀN PHÍM ---
+        renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === renderer.domElement) {
+                yaw -= e.movementX * 0.0025; pitch -= e.movementY * 0.0025;
+                pitch = Math.max(0.15, Math.min(Math.PI / 2.2, pitch));
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            let key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = true;
+            if (key === 'g') {
+                isFlowActive = !isFlowActive;
+                const oldPos = player.position.clone();
+                const oldRot = player.rotation.y;
+                scene.remove(player);
+                player = createLegoPlayer(myStyle, isFlowActive);
+                player.position.copy(oldPos); player.rotation.y = oldRot;
+                scene.add(player);
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            let key = e.key.toLowerCase(); if (keys.hasOwnProperty(key)) keys[key] = false;
+        });
+        document.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && document.pointerLockElement === renderer.domElement) {
+                if (player.position.distanceTo(ball.position) < 1.8) { 
+                    let pwr = isFlowActive ? 1.6 : 0.85;
+                    ballVelocity.x = -Math.sin(player.rotation.y) * pwr;
+                    ballVelocity.z = -Math.cos(player.rotation.y) * pwr;
+                }
+            }
+        });
+
+        // --- SOCKET SYNC ---
+        socket.emit('newPlayer', { style: myStyle }); // Gửi style cho server biết
+        socket.on('currentPlayers', (players) => {
+            for (let id in players) {
+                if (socket.id && id === socket.id) continue;
+                addOtherPlayer(id, players[id]);
+            }
+        });
+        socket.on('newPlayer', (data) => { addOtherPlayer(data.playerId, data.playerInfo); });
+        socket.on('playerMoved', (data) => {
+            if (otherPlayers[data.playerId]) {
+                otherPlayers[data.playerId].position.set(data.playerInfo.x || 0, 0, data.playerInfo.z || 0);
+                if (data.playerInfo.rotY !== undefined) otherPlayers[data.playerId].rotation.y = data.playerInfo.rotY;
+            }
+        });
+        socket.on('playerDisconnected', (id) => {
+            if (otherPlayers[id]) { scene.remove(otherPlayers[id]); delete otherPlayers[id]; }
+        });
+
+        // Khởi động Game Loop
+        animate();
+    }
+
     function addOtherPlayer(id, info) {
         if (otherPlayers[id]) scene.remove(otherPlayers[id]);
-        const mesh = createVoxelPlayer(info.isFlow);
+        const mesh = createLegoPlayer(info.style || 'isagi', info.isFlow); // Render đúng style đối thủ
         mesh.position.set(info.x || 0, 0, info.z || 0);
         scene.add(mesh);
         otherPlayers[id] = mesh;
     }
-    
-    socket.on('playerMoved', (data) => {
-        if (otherPlayers[data.playerId]) {
-            otherPlayers[data.playerId].position.x = data.playerInfo.x || 0;
-            otherPlayers[data.playerId].position.z = data.playerInfo.z || 0;
-            if (data.playerInfo.rotY !== undefined) {
-                otherPlayers[data.playerId].rotation.y = data.playerInfo.rotY;
-            }
-        }
-    });
-    
-    socket.on('playerDisconnected', (id) => {
-        if (otherPlayers[id]) { scene.remove(otherPlayers[id]); delete otherPlayers[id]; }
-    });
 
     // ==========================================
-    // 7. VÒNG LẶP THỜI GIAN (GAME LOOP & VẬT LÝ AN TOÀN)
+    // 3. HỆ THỐNG XÂY DỰNG CƠ THỂ LEGO & TÓC NHÂN VẬT
+    // ==========================================
+    function createLegoPlayer(styleName, isFlow) {
+        const pGroup = new THREE.Group();
+        const skinColor = 0xFAD7A1;
+        const jerseyBlue = 0x3498DB;
+        const shortDarkBlue = 0x1B4F72;
+        const innerBlack = 0x111111;
+        
+        // 1 khối Thân (Chữ nhật đứng)
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.5), new THREE.MeshBasicMaterial({ color: jerseyBlue }));
+        torso.position.y = 1.4; pGroup.add(torso);
+
+        // 2 khối Chân (Vuông vức, chiều rộng = sâu)
+        const legGeo = new THREE.BoxGeometry(0.35, 1.2, 0.35);
+        const legMat = new THREE.MeshBasicMaterial({ color: shortDarkBlue });
+        const legL = new THREE.Mesh(legGeo, legMat); legL.position.set(-0.2, 0.6, 0); pGroup.add(legL);
+        const legR = new THREE.Mesh(legGeo, legMat); legR.position.set(0.2, 0.6, 0); pGroup.add(legR);
+
+        // 2 khối Tay (Vuông vức, tay ép sát thân)
+        const armGeo = new THREE.BoxGeometry(0.3, 1.1, 0.3);
+        const armMat = new THREE.MeshBasicMaterial({ color: innerBlack }); // Mặc áo bó đen bên trong
+        const armL = new THREE.Mesh(armGeo, armMat); armL.position.set(-0.55, 1.4, 0); pGroup.add(armL);
+        const armR = new THREE.Mesh(armGeo, armMat); armR.position.set(0.55, 1.4, 0); pGroup.add(armR);
+
+        // Đầu (Hình trụ nhỏ như Lego)
+        const head = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.55, 16), new THREE.MeshBasicMaterial({ color: skinColor }));
+        head.position.y = 2.275; pGroup.add(head);
+
+        // --- ĐỘI TÓC CHO TỪNG NHÂN VẬT ---
+        const hairGroup = new THREE.Group();
+        let hairMat = new THREE.MeshBasicMaterial({ color: isFlow ? 0x00ffff : 0x222222 }); // Mặc định đen
+        
+        switch(styleName) {
+            case 'isagi': // Tóc xanh đen xéo
+                hairMat.color.setHex(isFlow ? 0x00ffff : 0x1A252C);
+                const isagiHair = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.25, 0.65), hairMat);
+                isagiHair.position.y = 0.3; hairGroup.add(isagiHair);
+                break;
+            case 'bachira': // Tóc Undercut vàng đen (Blocky)
+                const bTop = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.2, 0.7), new THREE.MeshBasicMaterial({ color: isFlow? 0x00ffff : 0x111111 }));
+                const bBot = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.1, 0.75), new THREE.MeshBasicMaterial({ color: isFlow? 0x00ffff : 0xF1C40F })); // Vàng
+                bTop.position.y = 0.3; bBot.position.y = 0.15; hairGroup.add(bTop, bBot);
+                break;
+            case 'nagi': // Tóc trắng xù
+                hairMat.color.setHex(isFlow ? 0x00ffff : 0xEEEEEE);
+                const nagiHair = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.3, 0.75), hairMat);
+                nagiHair.position.y = 0.35; nagiHair.rotation.y = Math.PI / 4; hairGroup.add(nagiHair);
+                break;
+            case 'rin': // Xanh đen vuốt nhọn (Gắn nón chóp)
+                hairMat.color.setHex(isFlow ? 0x00ffff : 0x113333);
+                const rinHair = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.5, 4), hairMat);
+                rinHair.position.y = 0.4; hairGroup.add(rinHair);
+                break;
+            case 'barou': // Đen vuốt ngược
+                hairMat.color.setHex(isFlow ? 0xff0000 : 0x111111); // Flow Barou màu đỏ
+                const barouHair = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.6, 4), hairMat);
+                barouHair.position.set(0, 0.45, -0.1); barouHair.rotation.x = -0.2; hairGroup.add(barouHair);
+                break;
+            case 'chigiri': // Tóc đỏ dài
+                hairMat.color.setHex(isFlow ? 0xffaaaa : 0xCB4335);
+                const cTop = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.2, 0.65), hairMat); cTop.position.y = 0.3;
+                const cBraid = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.8, 0.2), hairMat); cBraid.position.set(0.2, -0.1, -0.2); // Tóc tết sau
+                hairGroup.add(cTop, cBraid);
+                break;
+            case 'kaiser': // Kaiser Limited Style (Vàng + vệt xanh)
+                torso.material.color.setHex(0xFFD700); // Áo vàng giới hạn
+                hairMat.color.setHex(isFlow ? 0xff00ff : 0xF1C40F);
+                const kTop = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.25, 0.7), hairMat); kTop.position.y = 0.3;
+                const kTail = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.6, 0.15), new THREE.MeshBasicMaterial({ color: 0x3498DB })); // Đuôi xanh
+                kTail.position.set(0, -0.1, -0.3); hairGroup.add(kTop, kTail);
+                break;
+        }
+        head.add(hairGroup); // Gắn cụm tóc vào cái đầu trụ
+        return pGroup;
+    }
+
+    // ==========================================
+    // 4. GAME LOOP & VẬT LÝ
     // ==========================================
     function animate() {
         requestAnimationFrame(animate);
 
-        let speed = 0.14;
-        if (keys.shift) speed = 0.22; 
+        let speed = keys.shift ? 0.22 : 0.14; 
         if (isFlowActive) speed = 0.32; 
 
-        // Tính toán Vector di chuyển chuẩn theo góc nhìn Camera xoay Y (yaw)
-        const forwardX = -Math.sin(yaw);
-        const forwardZ = -Math.cos(yaw);
-        const rightX = Math.cos(yaw);
-        const rightZ = -Math.sin(yaw);
+        const forwardX = -Math.sin(yaw), forwardZ = -Math.cos(yaw);
+        const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
 
-        let moveX = 0;
-        let moveZ = 0;
-
+        let moveX = 0, moveZ = 0;
         if (keys.w) { moveX += forwardX; moveZ += forwardZ; }
         if (keys.s) { moveX -= forwardX; moveZ -= forwardZ; }
         if (keys.a) { moveX -= rightX; moveZ -= rightZ; }
@@ -267,71 +270,44 @@ window.addEventListener('DOMContentLoaded', () => {
         let length = Math.sqrt(moveX * moveX + moveZ * moveZ);
         let isMoving = false;
 
-        // KHÓA BẢO VỆ CHỐNG CHIA CHO 0 (NaN CRASH)
         if (length > 0 && !isNaN(length)) {
-            moveX = (moveX / length) * speed;
-            moveZ = (moveZ / length) * speed;
-
-            player.position.x += moveX;
-            player.position.z += moveZ;
-
+            player.position.x += (moveX / length) * speed;
+            player.position.z += (moveZ / length) * speed;
             player.rotation.y = yaw; 
             isMoving = true;
         }
 
-        // Khóa cầu thủ trong biên sân xám
         player.position.x = Math.max(-19.5, Math.min(19.5, player.position.x));
         player.position.z = Math.max(-34.5, Math.min(34.5, player.position.z));
 
-        // VẬT LÝ RÊ BÓNG 360 ĐỘ (Đẩy nhẹ bóng đi trước mặt)
-        let distToBall = player.position.distanceTo(ball.position);
-        if (distToBall < 1.2) {
-            const lookDirX = -Math.sin(player.rotation.y);
-            const lookDirZ = -Math.cos(player.rotation.y);
-            ball.position.x = player.position.x + lookDirX * 1.2;
-            ball.position.z = player.position.z + lookDirZ * 1.2;
+        // Rê bóng
+        if (player.position.distanceTo(ball.position) < 1.2) {
+            ball.position.x = player.position.x + -Math.sin(player.rotation.y) * 1.2;
+            ball.position.z = player.position.z + -Math.cos(player.rotation.y) * 1.2;
         }
 
-        // Cập nhật gia tốc bóng khi được sút đi
-        ball.position.x += ballVelocity.x;
-        ball.position.z += ballVelocity.z;
-        ballVelocity.x *= 0.95;
-        ballVelocity.z *= 0.95;
-
-        // Khóa bóng trong biên sân xám
+        ball.position.x += ballVelocity.x; ball.position.z += ballVelocity.z;
+        ballVelocity.x *= 0.95; ballVelocity.z *= 0.95;
         ball.position.x = Math.max(-19.5, Math.min(19.5, ball.position.x));
         ball.position.z = Math.max(-34.5, Math.min(34.5, ball.position.z));
 
-        // TÍNH TOÁN VỊ TRÍ CAMERA XOAY 360 QUANH CẦU THỦ
-        const cameraDistance = 15; 
-        let camX = player.position.x + cameraDistance * Math.sin(yaw) * Math.cos(pitch);
-        let camY = player.position.y + cameraDistance * Math.sin(pitch);
-        let camZ = player.position.z + cameraDistance * Math.cos(yaw) * Math.cos(pitch);
-
-        // Bộ lọc chặn dữ liệu lỗi trước khi gán cho Camera
-        if (!isNaN(camX) && !isNaN(camY) && !isNaN(camZ)) {
-            camera.position.set(camX, camY, camZ);
-        }
+        // Camera Update
+        let camX = player.position.x + 15 * Math.sin(yaw) * Math.cos(pitch);
+        let camY = player.position.y + 15 * Math.sin(pitch);
+        let camZ = player.position.z + 15 * Math.cos(yaw) * Math.cos(pitch);
+        if (!isNaN(camX)) camera.position.set(camX, camY, camZ);
         camera.lookAt(player.position);
 
-        // Chỉ đồng bộ lên server nếu có thư viện socket và nhân vật thực sự di chuyển
         if (typeof io !== 'undefined' && (isMoving || keys.g)) {
-            socket.emit('playerMovement', {
-                x: player.position.x,
-                z: player.position.z,
-                isFlow: isFlowActive,
-                rotY: player.rotation.y
-            });
+            socket.emit('playerMovement', { x: player.position.x, z: player.position.z, isFlow: isFlowActive, rotY: player.rotation.y, style: myStyle });
         }
-
         renderer.render(scene, camera);
     }
-    animate();
 
-    // Co giãn màn hình mượt mà khi thay đổi kích thước trình duyệt
     window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        if(camera && renderer) {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
+        }
     });
 });
