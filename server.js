@@ -2,16 +2,17 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
-const path = require('path'); // THÊM DÒNG NÀY ĐỂ XỬ LÝ ĐƯỜNG DẪN
+const path = require('path');
 
-// 1. Chỉ định thư mục public một cách rõ ràng tuyệt đối
-app.use(express.static(path.join(__dirname, 'public')));
+// 1. Phục vụ các file tĩnh (như game.js) ngay tại thư mục gốc
+app.use(express.static(__dirname));
 
-// 2. Ép server trả về file index.html khi có người truy cập vào link
+// 2. Trả về file index.html nằm ngay ở ngoài cùng khi có người vào link
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// --- GIỮ NGUYÊN TÍNH NĂNG MẠNG CŨ CỦA BRO ---
 const players = {}; 
 
 io.on('connection', (socket) => {
@@ -33,7 +34,7 @@ io.on('connection', (socket) => {
     });
 });
 
-// 3. RẤT QUAN TRỌNG: Render bắt buộc phải dùng process.env.PORT
+// 3. Cổng chạy cho Render
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, () => {
     console.log(`🚀 Server Game đang chạy tại port: ${PORT}`);
